@@ -6,16 +6,27 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "node --env-file=.env.local scripts/migrate-to-postgres.mjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.73",
+    "@ai-sdk/react": "^4.0.115",
+    "@electric-sql/pglite": "^0.5.8",
+    "ai": "^7.0.112",
+    "bcryptjs": "^3.0.3",
+    "lucide-react": "^1.47.0",
     "next": "16.3.6",
+    "next-auth": "5.0.0-beta.32",
+    "pg": "^8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -25,3 +36,4 @@
   },
   "packageManager": "pnpm@11.19.0"
 }
+

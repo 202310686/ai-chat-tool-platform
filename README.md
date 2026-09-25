@@ -7,6 +7,7 @@
 ## 已实现功能
 
 - 邮箱注册、登录、退出：Auth.js Credentials + bcrypt 密码哈希 + JWT 会话。
+- 可选注册邀请码；按账号限制每日模型调用，避免公开体验站意外产生大量费用。
 - 流式聊天、多轮上下文、会话列表、记录持久化及用户数据隔离。
 - 模型工具调用：北京时间与四则运算；工具执行结果会返回模型继续生成答案。
 - 结构化输出：将原始文字提取为标题、摘要、要点、待办事项，使用 AI SDK JSON 模式 + Zod Schema 校验。
@@ -18,7 +19,7 @@
 要求 Node.js 20.9+、pnpm。
 
 1. `pnpm install`
-2. 复制 `.env.example` 为 `.env.local`，填写 `AUTH_SECRET`、`DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`。**不要提交或分享密钥。**
+2. 复制 `env.example` 为 `.env.local`，填写 `AUTH_SECRET`、`DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`。**不要提交或分享密钥。**
 3. `pnpm dev`
 4. 打开 http://localhost:3000，注册账号开始使用。
 
@@ -49,6 +50,11 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 | `OPENAI_MODEL` | 默认 `gpt-4o-mini` |
 | `OPENAI_BASE_URL` | 可选的 OpenAI 兼容接口地址 |
 | `DATABASE_URL` | 可选；独立 PostgreSQL 连接串 |
+| `REGISTRATION_CODE` | 可选；设置后注册时必须输入邀请码，推荐公开部署时设置 |
+| `CHAT_DAILY_LIMIT` | 每个账号每天最多对话次数，默认 20 |
+| `STRUCTURED_DAILY_LIMIT` | 每个账号每天最多结构化整理次数，默认 10 |
+
+每日额度按北京时间日期统计，请求发起后计入额度（即使模型调用随后失败）。聊天仅携带最近 12 条历史消息、单条输入最多 4000 字、单次输出最多 800 token，以控制模型成本。额度保存在当前数据库中；不设置邀请码仍允许公开注册，无法阻止通过大量新账号绕过按账号额度。
 
 ## 面试演示路线
 
@@ -59,6 +65,7 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 ```bash
 pnpm lint
 pnpm build
+node --test tests/quota-sql.test.mjs
 ```
 
 代码位于 `app/api`、`components`、`lib`；数据库迁移脚本位于 `scripts/migrate-to-postgres.mjs`。
@@ -79,5 +86,5 @@ curl -sS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:3000/login
 
 预期服务状态为 `active`，登录页返回 `HTTP 200`。公网地址保持不变；`.env.local`、`.data` 不在 Git 中，更新时会保留。HTTPS 由 Caddy 反向代理提供。
 
-> 公开体验站会产生模型调用费用。建议为公开注册增加邀请码或关闭注册，并在模型服务商控制台设置额度/用量告警。不要将 `.env.local`、API Key 或数据库密码提交到 GitHub。
+> 公开体验站会产生模型调用费用。建议在 ECS 的 `.env.local` 中设置 `REGISTRATION_CODE`，并在模型服务商控制台设置额度/用量告警。修改环境变量后需重启 `ai-platform`；不要将 `.env.local`、邀请码、API Key 或数据库密码提交到 GitHub。
 

@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS chats_user_updated ON chats(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS messages_chat_created ON messages(chat_id, created_at);
+CREATE TABLE IF NOT EXISTS usage_counters (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day DATE NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('chat', 'structured')),
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, day, kind)
+);
 `;
 
 export async function db(): Promise<Database> {

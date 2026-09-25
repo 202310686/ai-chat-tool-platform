@@ -3,6 +3,7 @@ import { stepCountIs, streamText, tool, type ModelMessage, type UIMessage } from
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { currentUserId } from "@/lib/user";
+import { consumeQuota } from "@/lib/quota";
 
 export const maxDuration = 60;
 const bodySchema = z.object({ chatId: z.uuid(), messages: z.array(z.any()).min(1) });
@@ -26,11 +27,14 @@ export async function POST(req: Request) {
   const content = last?.role === "user"
     ? last.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n").trim()
     : "";
-  if (!content || content.length > 10000) return Response.json({ error: "消息为空或过长" }, { status: 400 });
+  if (!content || content.length > 4000) return Response.json({ error: "消息为空或超过 4000 字" }, { status: 400 });
+
+  const quota = await consumeQuota(userId, "chat");
+  if (!quota.allowed) return Response.json({ error: `今日对话次数已达 ${quota.limit} 次，请明天再试。` }, { status: 429 });
 
   const database = await db();
   const history = await database.query<{ role: "user" | "assistant"; content: string }>(
-    "SELECT role, content FROM messages WHERE chat_id = $1 ORDER BY created_at, id", [chatId]
+    "SELECT role, content FROM (SELECT role, content, created_at, id FROM messages WHERE chat_id = $1 ORDER BY created_at DESC, id DESC LIMIT 12) recent ORDER BY created_at, id", [chatId]
   );
   await database.query("INSERT INTO messages (chat_id, role, content) VALUES ($1, 'user', $2)", [chatId, content]);
   await database.query(
@@ -50,6 +54,7 @@ export async function POST(req: Request) {
     model: provider.chat(usingDeepSeek ? (process.env.DEEPSEEK_MODEL || "deepseek-flash") : (process.env.OPENAI_MODEL || "gpt-4o-mini")),
     system: "你是一个简洁、可靠的中文 AI 助手。涉及计算和当前时间时优先使用工具；不编造工具结果。",
     messages: modelMessages,
+    maxOutputTokens: 800,
     stopWhen: stepCountIs(3),
     tools: {
       currentTime: tool({

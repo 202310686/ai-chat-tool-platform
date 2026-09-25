@@ -2,6 +2,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { currentUserId } from "@/lib/user";
+import { consumeQuota } from "@/lib/quota";
 
 export const maxDuration = 60;
 const requestSchema = z.object({ text: z.string().trim().min(1).max(6000) });
@@ -21,6 +22,9 @@ export async function POST(req: Request) {
   const usingDeepSeek = Boolean(process.env.DEEPSEEK_API_KEY);
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) return Response.json({ error: "请先配置模型 API Key" }, { status: 503 });
+
+  const quota = await consumeQuota(userId, "structured");
+  if (!quota.allowed) return Response.json({ error: `今日整理次数已达 ${quota.limit} 次，请明天再试。` }, { status: 429 });
 
   try {
     const provider = createOpenAI({

@@ -5,11 +5,12 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Bot, LockKeyhole, Mail, Sparkles } from "lucide-react";
 
-export default function LoginForm() {
+export default function LoginForm({ requiresInviteCode }: { requiresInviteCode: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -17,6 +18,7 @@ export default function LoginForm() {
     if (next === mode) return;
     setMode(next);
     setPassword("");
+    setInviteCode("");
     setError("");
   }
 
@@ -28,7 +30,7 @@ export default function LoginForm() {
       if (mode === "register") {
         const response = await fetch("/api/register", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, password, inviteCode }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "注册失败");
@@ -58,6 +60,7 @@ export default function LoginForm() {
         <form onSubmit={submit} className="auth-form">
           <label><span>邮箱地址</span><div className="input-wrap"><Mail size={17} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" required /></div></label>
           <label><span>密码</span><div className="input-wrap"><LockKeyhole size={17} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder={mode === "login" ? "请输入密码" : "至少 8 位密码"} minLength={mode === "register" ? 8 : undefined} required /></div></label>
+          {mode === "register" && requiresInviteCode && <label><span>邀请码</span><div className="input-wrap"><LockKeyhole size={17} /><input type="text" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} autoComplete="off" placeholder="请输入站点邀请码" maxLength={128} required /></div></label>}
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="primary-button" disabled={busy} type="submit">{busy ? "请稍候..." : mode === "login" ? "进入工作台" : "创建账号"}<ArrowRight size={17} /></button>
         </form>

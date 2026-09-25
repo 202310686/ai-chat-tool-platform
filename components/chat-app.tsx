@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
-import { ArrowUp, Bot, Braces, Calculator, Clock3, Menu, MessageSquare, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowUp, Bot, Braces, Calculator, Check, Clock3, Copy, Menu, MessageSquare, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import StructuredPanel from "@/components/structured-panel";
 
 type Chat = { id: string; title: string; updated_at: string };
@@ -15,8 +17,16 @@ const prompts = [
   { icon: Clock3, title: "查询时间", prompt: "现在北京时间是几点？请调用工具。" },
 ];
 
+async function fetchChats(): Promise<Chat[]> {
+  const response = await fetch("/api/chats");
+  if (!response.ok) throw new Error("读取对话列表失败");
+  return response.json();
+}
+
 export default function ChatApp({ email }: { email: string }) {
   const [chats, setChats] = useState<Chat[]>([]);
+  const [loadingChats, setLoadingChats] = useState(true);
+  const [historyError, setHistoryError] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [initial, setInitial] = useState<UIMessage[]>([]);
   const [creating, setCreating] = useState(false);
@@ -24,6 +34,8 @@ export default function ChatApp({ email }: { email: string }) {
   const [queued, setQueued] = useState("");
   const [notice, setNotice] = useState("");
   const [showStructured, setShowStructured] = useState(false);
+  const openRequest = useRef(0);
+  const createPending = useRef(false);
 
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
@@ -37,26 +49,49 @@ export default function ChatApp({ email }: { email: string }) {
   });
 
   const refreshChats = useCallback(async () => {
-    const response = await fetch("/api/chats");
-    if (response.ok) setChats(await response.json());
+    try {
+      setChats(await fetchChats());
+      setHistoryError(false);
+    } catch {
+      setHistoryError(true);
+    } finally {
+      setLoadingChats(false);
+    }
   }, []);
 
   useEffect(() => {
-    fetch("/api/chats").then((response) => response.ok ? response.json() : []).then(setChats).catch(() => setChats([]));
+    let active = true;
+    fetchChats().then((items) => {
+      if (active) { setChats(items); setHistoryError(false); }
+    }).catch(() => {
+      if (active) setHistoryError(true);
+    }).finally(() => {
+      if (active) setLoadingChats(false);
+    });
+    return () => { active = false; };
   }, []);
 
   async function openChat(id: string) {
+    const request = ++openRequest.current;
     setNotice("");
-    const response = await fetch("/api/chats/" + id);
-    if (!response.ok) { setNotice("读取对话失败"); return; }
-    const data: { messages: SavedMessage[] } = await response.json();
-    setInitial(data.messages.map((m) => ({ id: m.id, role: m.role, parts: [{ type: "text", text: m.content }] })));
-    setSelected(id);
-    setQueued("");
-    setSidebarOpen(false);
+    try {
+      const response = await fetch("/api/chats/" + id);
+      if (!response.ok) throw new Error("读取对话失败");
+      const data: { messages: SavedMessage[] } = await response.json();
+      if (request !== openRequest.current) return;
+      setInitial(data.messages.map((m) => ({ id: m.id, role: m.role, parts: [{ type: "text", text: m.content }] })));
+      setSelected(id);
+      setQueued("");
+      setSidebarOpen(false);
+    } catch {
+      if (request === openRequest.current) setNotice("读取对话失败，请重试。");
+    }
   }
 
   async function newChat(prompt = "") {
+    if (createPending.current) return;
+    createPending.current = true;
+    ++openRequest.current;
     setCreating(true);
     setNotice("");
     try {
@@ -71,16 +106,21 @@ export default function ChatApp({ email }: { email: string }) {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "创建对话失败");
     } finally {
+      createPending.current = false;
       setCreating(false);
     }
   }
 
   async function deleteChat(id: string) {
     if (!window.confirm("确定删除这段对话吗？")) return;
-    const response = await fetch("/api/chats/" + id, { method: "DELETE" });
-    if (!response.ok) { setNotice("删除失败"); return; }
-    if (selected === id) { setSelected(null); setInitial([]); }
-    await refreshChats();
+    try {
+      const response = await fetch("/api/chats/" + id, { method: "DELETE" });
+      if (!response.ok) throw new Error("删除失败");
+      if (selected === id) { ++openRequest.current; setSelected(null); setInitial([]); }
+      await refreshChats();
+    } catch {
+      setNotice("删除失败，请稍后重试。");
+    }
   }
 
   const current = chats.find((chat) => chat.id === selected);
@@ -95,7 +135,7 @@ export default function ChatApp({ email }: { email: string }) {
         <button className="new-chat" disabled={creating} onClick={() => newChat()}><Plus size={18} /> 新建对话 <span>Ctrl/⌘ K</span></button>
         <div className="sidebar-label">最近对话</div>
         <div className="chat-list">
-          {chats.length === 0 ? <p className="muted small empty-history">还没有对话，开始探索吧。</p> : chats.map((chat) => (
+          {loadingChats ? <p className="muted small empty-history">正在加载对话…</p> : historyError ? <div className="history-error"><p>对话列表暂时没加载出来。</p><button onClick={() => void refreshChats()}>重试</button></div> : chats.length === 0 ? <p className="muted small empty-history">还没有对话，开始探索吧。</p> : chats.map((chat) => (
             <div key={chat.id} className={"chat-row " + (selected === chat.id ? "selected" : "")}>
               <button className="chat-select" onClick={() => openChat(chat.id)}><MessageSquare size={16} /><span>{chat.title}</span></button>
               <button className="delete-chat" aria-label={"删除" + chat.title} onClick={() => deleteChat(chat.id)}><Trash2 size={15} /></button>
@@ -112,7 +152,7 @@ export default function ChatApp({ email }: { email: string }) {
           <div className="topbar-left"><button className="icon-button mobile-menu" aria-label="打开侧栏" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><span className="topbar-title">{current?.title || "新对话"}</span><span className="topbar-chevron">⌄</span></div>
           <div className="topbar-actions"><button className="structured-open" onClick={() => setShowStructured(true)}><Braces size={15} /> 结构化整理</button><div className="model-pill"><span className="status-dot" /> AI 助手</div></div>
         </header>
-        {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
+        {notice && <div className="notice" role="alert">{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
         {selected ? <ChatPanel key={selected} id={selected} initial={initial} queued={queued} onQueued={() => setQueued("")} onComplete={refreshChats} /> :
           <div className="welcome">
             <div className="welcome-icon"><Sparkles size={30} /></div>
@@ -130,6 +170,7 @@ export default function ChatApp({ email }: { email: string }) {
 
 function ChatPanel({ id, initial, queued, onQueued, onComplete }: { id: string; initial: UIMessage[]; queued: string; onQueued: () => void; onComplete: () => void }) {
   const [input, setInput] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const { messages, sendMessage, status, error, stop } = useChat({
@@ -152,6 +193,17 @@ function ChatPanel({ id, initial, queued, onQueued, onComplete }: { id: string; 
     setInput("");
     void sendMessage({ text });
   }
+
+  async function copyMessage(message: UIMessage) {
+    const content = message.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedId(message.id);
+      window.setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      setCopiedId(null);
+    }
+  }
   return (
     <>
       <div className="message-scroll" ref={scrollRef} onScroll={(event) => {
@@ -163,17 +215,18 @@ function ChatPanel({ id, initial, queued, onQueued, onComplete }: { id: string; 
           {messages.map((message) => <div key={message.id} className={"message " + message.role}>
             <div className="message-avatar">{message.role === "user" ? "我" : <Bot size={18} />}</div>
             <div className="message-body"><div className="message-name">{message.role === "user" ? "你" : "Flow AI"}</div>
-              {message.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{part.text}</div> : part.type.startsWith("tool-") ? <div key={index} className="tool-chip"><Sparkles size={14} /> 已调用工具 · {part.type.replace("tool-", "")}</div> : null)}
+              {message.parts.map((part, index) => part.type === "text" ? <div key={index} className="message-text">{message.role === "assistant" ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{part.text}</ReactMarkdown> : part.text}</div> : part.type.startsWith("tool-") ? <div key={index} className="tool-chip"><Sparkles size={14} /> 已调用工具 · {part.type.replace("tool-", "")}</div> : null)}
+              {message.role === "assistant" && message.parts.some((part) => part.type === "text" && part.text.trim()) && <button className="copy-message" onClick={() => void copyMessage(message)} aria-label={copiedId === message.id ? "已复制回复" : "复制回复"}>{copiedId === message.id ? <Check size={14} /> : <Copy size={14} />}{copiedId === message.id ? "已复制" : "复制"}</button>}
             </div>
           </div>)}
           {busy && <div className="thinking"><span /><span /><span /> AI 正在思考</div>}
-          {error && <div className="chat-error">发送失败：{error.message}</div>}
+          {error && <div className="chat-error" role="alert">发送失败：{error.message}</div>}
         </div>
       </div>
       <div className="composer-area">
         <div className="composer">
-          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder="向 Flow AI 发送消息..." aria-label="聊天消息" rows={2} />
-          <div className="composer-footer"><span><Sparkles size={14} /> 支持多轮对话与工具调用</span><button onClick={busy ? stop : submit} disabled={!busy && !input.trim()} aria-label={busy ? "停止生成" : "发送"}>{busy ? <span className="stop-square" /> : <ArrowUp size={19} />}</button></div>
+          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder="向 Flow AI 发送消息..." aria-label="聊天消息" maxLength={4000} rows={2} />
+          <div className="composer-footer"><span><Sparkles size={14} /> {input.length}/4000 字 · 支持工具调用</span><button onClick={busy ? stop : submit} disabled={!busy && !input.trim()} aria-label={busy ? "停止生成" : "发送"}>{busy ? <span className="stop-square" /> : <ArrowUp size={19} />}</button></div>
         </div>
         <p className="composer-hint">AI 生成的内容可能有误，请核对重要信息。按 Enter 发送，Shift + Enter 换行。</p>
       </div>

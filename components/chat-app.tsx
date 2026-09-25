@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import { ArrowUp, Bot, Braces, Calculator, Clock3, Menu, MessageSquare, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { DefaultChatTransport, type UIMessage } from "ai";
@@ -24,6 +24,17 @@ export default function ChatApp({ email }: { email: string }) {
   const [queued, setQueued] = useState("");
   const [notice, setNotice] = useState("");
   const [showStructured, setShowStructured] = useState(false);
+
+  useEffect(() => {
+    function onShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (!creating && !showStructured) void newChat();
+      }
+    }
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  });
 
   const refreshChats = useCallback(async () => {
     const response = await fetch("/api/chats");
@@ -81,7 +92,7 @@ export default function ChatApp({ email }: { email: string }) {
           <div className="logo"><span><Sparkles size={19} /></span><strong>Flow AI</strong></div>
           <button className="icon-button mobile-close" aria-label="关闭侧栏" onClick={() => setSidebarOpen(false)}><X size={19} /></button>
         </div>
-        <button className="new-chat" disabled={creating} onClick={() => newChat()}><Plus size={18} /> 新建对话 <span>⌘ K</span></button>
+        <button className="new-chat" disabled={creating} onClick={() => newChat()}><Plus size={18} /> 新建对话 <span>Ctrl/⌘ K</span></button>
         <div className="sidebar-label">最近对话</div>
         <div className="chat-list">
           {chats.length === 0 ? <p className="muted small empty-history">还没有对话，开始探索吧。</p> : chats.map((chat) => (
@@ -99,7 +110,7 @@ export default function ChatApp({ email }: { email: string }) {
       <main className="main-area">
         <header className="topbar">
           <div className="topbar-left"><button className="icon-button mobile-menu" aria-label="打开侧栏" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><span className="topbar-title">{current?.title || "新对话"}</span><span className="topbar-chevron">⌄</span></div>
-          <div className="topbar-actions"><button className="structured-open" onClick={() => setShowStructured(true)}><Braces size={15} /> 结构化整理</button><div className="model-pill"><span className="status-dot" /> AI 助手 <span className="pill-divider" /> 在线</div></div>
+          <div className="topbar-actions"><button className="structured-open" onClick={() => setShowStructured(true)}><Braces size={15} /> 结构化整理</button><div className="model-pill"><span className="status-dot" /> AI 助手</div></div>
         </header>
         {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
         {selected ? <ChatPanel key={selected} id={selected} initial={initial} queued={queued} onQueued={() => setQueued("")} onComplete={refreshChats} /> :
@@ -119,25 +130,34 @@ export default function ChatApp({ email }: { email: string }) {
 
 function ChatPanel({ id, initial, queued, onQueued, onComplete }: { id: string; initial: UIMessage[]; queued: string; onQueued: () => void; onComplete: () => void }) {
   const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
   const { messages, sendMessage, status, error, stop } = useChat({
     id, messages: initial,
     transport: new DefaultChatTransport({ api: "/api/chat", body: { chatId: id } }),
   });
   const busy = status === "streaming" || status === "submitted";
   useEffect(() => {
-    if (queued) { void sendMessage({ text: queued }); onQueued(); }
+    if (queued) { followLatest.current = true; void sendMessage({ text: queued }); onQueued(); }
   }, [queued, sendMessage, onQueued]);
   useEffect(() => { if (status === "ready" && messages.length) onComplete(); }, [status, messages.length, onComplete]);
+  useEffect(() => {
+    if (followLatest.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, status]);
 
   function submit() {
     const text = input.trim();
     if (!text || busy) return;
+    followLatest.current = true;
     setInput("");
     void sendMessage({ text });
   }
   return (
     <>
-      <div className="message-scroll">
+      <div className="message-scroll" ref={scrollRef} onScroll={(event) => {
+        const element = event.currentTarget;
+        followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+      }}>
         <div className="messages">
           {messages.length === 0 && <div className="chat-empty"><div className="welcome-icon small-icon"><Sparkles size={22} /></div><h2>开始一段新对话</h2><p>向 AI 助手提问，或尝试调用时间、计算工具。</p></div>}
           {messages.map((message) => <div key={message.id} className={"message " + message.role}>
@@ -152,7 +172,7 @@ function ChatPanel({ id, initial, queued, onQueued, onComplete }: { id: string; 
       </div>
       <div className="composer-area">
         <div className="composer">
-          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="向 Flow AI 发送消息..." rows={2} />
+          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder="向 Flow AI 发送消息..." aria-label="聊天消息" rows={2} />
           <div className="composer-footer"><span><Sparkles size={14} /> 支持多轮对话与工具调用</span><button onClick={busy ? stop : submit} disabled={!busy && !input.trim()} aria-label={busy ? "停止生成" : "发送"}>{busy ? <span className="stop-square" /> : <ArrowUp size={19} />}</button></div>
         </div>
         <p className="composer-hint">AI 生成的内容可能有误，请核对重要信息。按 Enter 发送，Shift + Enter 换行。</p>

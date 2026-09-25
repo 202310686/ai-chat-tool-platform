@@ -76,3 +76,33 @@ button { cursor:pointer; }
 .structured-result pre { margin:0; padding:15px; overflow:auto; font-size:11px; line-height:1.6; color:#473e57; }
 .spin { animation:spin 1s linear infinite; } @keyframes spin {to{transform:rotate(360deg)}}
 @media(max-width:650px){.structured-open{font-size:0;padding:8px}.structured-open svg{width:17px;height:17px}.structured-panel{padding:19px}}
+
+/* Polished interaction states shared by desktop and touch layouts. */
+:root { color-scheme:light; --focus:#7959dd; }
+body { background:#fdfcff; }
+button { transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease; }
+button:focus-visible,input:focus-visible,textarea:focus-visible { outline:2px solid var(--focus); outline-offset:3px; }
+button:disabled { cursor:not-allowed; }
+.sidebar { background:linear-gradient(165deg,#faf9fe 0%,#f5f2fc 100%); }
+.main-area { background:radial-gradient(circle at 70% 8%,#faf7ff 0%,#fff 45%); }
+.topbar { background:#ffffffdf; backdrop-filter:blur(12px); }
+.new-chat:hover,.new-chat:focus-visible { box-shadow:0 6px 20px #6d51bd1a; transform:translateY(-1px); }
+.delete-chat { opacity:.72; border-radius:7px; }
+.delete-chat:hover,.delete-chat:focus-visible { background:#ffeef2; }
+.prompt-grid button:focus-visible { border-color:#a48ae9; box-shadow:0 8px 25px #6d51bd20; }
+.composer { background:#fff; box-shadow:0 9px 34px #51477d13; }
+.composer:focus-within { box-shadow:0 9px 34px #7959dd20; }
+.login-card { box-shadow:0 30px 80px #7162a329; }
+.primary-button:hover:not(:disabled),.structured-actions button:hover:not(:disabled) { filter:brightness(1.05); transform:translateY(-1px); }
+.form-error,.chat-error,.structured-error { line-height:1.6; }
+@media(max-width:650px){
+  .login-shell { min-height:100dvh; }
+  .app-shell { min-height:100dvh; height:100dvh; }
+  .sidebar { padding-bottom:max(16px,env(safe-area-inset-bottom)); }
+  .composer-area { padding-bottom:max(13px,env(safe-area-inset-bottom)); }
+  .welcome { max-height:calc(100dvh - 90px); overflow-y:auto; padding:15px 0; }
+  .topbar-actions { gap:6px; }
+  .model-pill { font-size:0; gap:0; border:0; padding:7px; }
+  .status-dot { width:8px; height:8px; }
+}
+@media(prefers-reduced-motion:reduce){ *,*::before,*::after { animation-duration:.01ms !important; scroll-behavior:auto !important; transition-duration:.01ms !important; } }
